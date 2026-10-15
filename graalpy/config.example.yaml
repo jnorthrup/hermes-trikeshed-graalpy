@@ -1,0 +1,8 @@
+model:
+  provider: nvidia
+  default: nvidia/nemotron-3-ultra-550b-a55b
+  base_url: https://integrate.api.nvidia.com/v1
+  key_env: NVIDIA_API_KEY
+auxiliary:
+  title_generation:
+    model_upgrade_enabled: false

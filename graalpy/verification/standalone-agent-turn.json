@@ -1,0 +1,49 @@
+{
+  "verified_at": "2026-10-15",
+  "entry": "borg.trikeshed.hermes.HermesGraalPy",
+  "upstream_revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
+  "runtime": {
+    "graalpy": "25.3.4.1",
+    "python": "3.13.14",
+    "java": "25.0.4.1",
+    "platform": "macos-aarch64",
+    "contexts_per_process": 1,
+    "posix_backend": "native"
+  },
+  "terminal": {
+    "transport": "normal OS PTY; stock prompt_toolkit input/output",
+    "typed_slash_help": true,
+    "typed_model_prompt": true,
+    "enter_submitted": true
+  },
+  "provider": "nvidia",
+  "model": "nvidia/nemotron-3-ultra-550b-a55b",
+  "source": "unmodified cli.main and HermesCLI.run",
+  "host_callbacks": false,
+  "gateway": false,
+  "trikeshed_server": false,
+  "prompt": "Use read_file to read lines 1-2 of LICENSE in the current working directory. Then reply exactly: STANDALONE_GRAAL_TOOL_OK MIT License",
+  "persisted_roles": [
+    "user",
+    "assistant",
+    "tool",
+    "assistant"
+  ],
+  "tool": {
+    "name": "read_file",
+    "requested_file": "LICENSE",
+    "offset": 1,
+    "limit": 2,
+    "result_content": "1|MIT License\n2|"
+  },
+  "final_reply": "STANDALONE_GRAAL_TOOL_OK MIT License",
+  "native_sqlite_persistence_verified": true,
+  "graceful_quit_exit_code": 0,
+  "blake2b_vectors_verified_digest_bytes": [
+    1,
+    16,
+    32,
+    64
+  ],
+  "blake2b_copy_verified": true
+}

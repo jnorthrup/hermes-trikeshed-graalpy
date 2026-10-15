@@ -1,0 +1,291 @@
+"""Terminal transport and receipts around the unmodified HermesCLI.run()."""
+
+import collections
+import codecs
+import gc
+import os
+import select
+import sys
+import threading
+import time
+import traceback
+
+_cli = None
+_chat = None
+_thread = None
+_feeder = None
+_input_stop = threading.Event()
+_pipe = None
+_failure = None
+_pending = collections.deque()
+_condition = threading.Condition()
+_receipt = threading.local()
+_size = (32, 100)
+
+
+def _feed(pipe):
+    decoder = codecs.getincrementaldecoder(sys.stdin.encoding or "utf-8")(errors="replace")
+    descriptor = sys.stdin.fileno()
+    try:
+        while not _input_stop.is_set():
+            if not select.select([descriptor], [], [], 0.1)[0]:
+                continue
+            data = os.read(descriptor, 4096)
+            if not data:
+                return
+            text = decoder.decode(data)
+            pipe.send_text(text)
+    except (OSError, ValueError):
+        if not _input_stop.is_set() and _pipe is not None:
+            raise
+
+
+def _join_workers():
+    """Join this adapter's input and the actual CLI's bound-method workers."""
+    _input_stop.set()
+    deadline = time.monotonic() + 20
+    current = threading.current_thread()
+    workers = [thread for thread in threading.enumerate()
+               if thread is not current and
+               (thread is _feeder or getattr(getattr(thread, "_target", None), "__self__", None) is _cli)]
+    for thread in workers:
+        thread.join(max(0, deadline - time.monotonic()))
+    remaining = [thread.name for thread in workers if thread.is_alive()]
+    if remaining:
+        raise RuntimeError("HermesCLI workers did not finish shutdown: " + ", ".join(remaining))
+
+
+def _threads():
+    result = []
+    for thread in threading.enumerate():
+        target = getattr(thread, "_target", None)
+        result.append({"name": thread.name, "daemon": thread.daemon,
+                       "target": getattr(target, "__qualname__", None)})
+    return result
+
+
+def _observe_chat(*args, **kwargs):
+    receipt = getattr(_receipt, "current", None)
+    if receipt is not None:
+        receipt["turn_attempted"] = True
+    return _chat(*args, **kwargs)
+
+
+def _turn_result(previous, result):
+    if result is previous or not isinstance(result, dict):
+        return None
+    return {key: result[key] for key in (
+        "completed", "failed", "partial", "interrupted", "error", "failure_reason", "api_calls",
+    ) if key in result}
+
+
+def _observe(line):
+    with _condition:
+        receipt = _pending.popleft() if _pending and _pending[0]["line"] == line else None
+    previous = getattr(_cli, "_last_turn_result", None)
+    _receipt.current = receipt
+    try:
+        # GraalPy finalizes temporary native cursors at collection rather than at
+        # CPython's reference-count boundary. Retire them before admitting input.
+        gc.collect()
+        context = getattr(getattr(_cli, "_app", None), "context", None)
+        return context.copy().run(_process, line) if context is not None else _process(line)
+    except BaseException:
+        if receipt is not None:
+            receipt["error"] = traceback.format_exc()
+        raise
+    finally:
+        if receipt is not None:
+            result = getattr(_cli, "_last_turn_result", None)
+            receipt["turn"] = _turn_result(previous, result)
+            receipt["done"].set()
+        _receipt.current = None
+
+
+def _serve():
+    global _pipe, _failure, _feeder
+    from prompt_toolkit.application import create_app_session
+    from prompt_toolkit.data_structures import Size
+    from prompt_toolkit.input import create_pipe_input
+    from prompt_toolkit.output.vt100 import Vt100_Output
+    try:
+        with create_pipe_input() as pipe:
+            _pipe = pipe
+            _feeder = threading.Thread(target=_feed, args=(pipe,), name="hermes-terminal-input", daemon=True)
+            _feeder.start()
+            output = Vt100_Output(sys.stdout, lambda: Size(rows=_size[0], columns=_size[1]),
+                                  term="xterm-256color", enable_cpr=False)
+            with create_app_session(input=pipe, output=output):
+                _cli.run()
+    except BaseException:
+        _failure = traceback.format_exc()
+        print(_failure, file=sys.stderr, flush=True)
+    finally:
+        _pipe = None
+        _cli._should_exit = True
+        try:
+            _join_workers()
+            from hermes_state_registry import close_all
+            close_all()
+        except BaseException:
+            _failure = (_failure + "\n" if _failure else "") + traceback.format_exc()
+            print(_failure, file=sys.stderr, flush=True)
+        with _condition:
+            for receipt in _pending:
+                receipt["error"] = _failure or "HermesCLI exited before processing input"
+                receipt["done"].set()
+            _pending.clear()
+            _condition.notify_all()
+        _host_call("sleeve_cli_closed", _cli.session_id, _failure)
+
+
+def start(call, model=None, resume=None, rows=32, columns=100):
+    global _cli, _thread, _process, _chat, _size, _host_call
+    if _cli is not None:
+        raise RuntimeError("HermesCLI worker already started")
+    _host_call = call
+    if not sys.argv:
+        sys.argv.append("hermes")
+    import trikeshed_contextvars
+    trikeshed_contextvars.install()
+    import trikeshed_modelmux as mux
+    from hermes_cli import runtime_provider
+    from agent import auxiliary_client
+    mux.install(call)
+    mux.register()
+    mux.bind_runtime(runtime_provider, auxiliary_client)
+    call("sleeve_progress", "importing stock cli.HermesCLI")
+    from cli import HermesCLI
+    import trikeshed_posix
+    trikeshed_posix.install()
+    call("sleeve_progress", "opening HermesCLI session store")
+    resize(rows, columns)
+    from hermes_state_registry import acquire, release
+    from hermes_cli.config import load_config_readonly
+    configured = load_config_readonly().get("model") or {}
+    options = {"model": model} if model else {}
+    if configured.get("provider") == mux.PROVIDER:
+        options.update(model=mux.select_model(model), provider=mux.PROVIDER, base_url=mux.BASE_URL)
+    store = acquire()
+    try:
+        gc.collect()
+        _cli = HermesCLI(**options, **({"resume": resume} if resume else {}))
+    finally:
+        release(store)
+    if _cli._session_db_unavailable or _cli._session_db is None:
+        from hermes_state import get_last_init_error
+        raise RuntimeError("HermesCLI session store unavailable: " + str(get_last_init_error()))
+    gc.collect()
+    _process = _cli._tui_process_one_input
+    _chat = _cli.chat
+    _cli.chat = _observe_chat
+    _cli._tui_process_one_input = _observe
+    _thread = threading.Thread(target=_serve, name="hermes-cli", daemon=False)
+    call("sleeve_progress", "starting HermesCLI.run terminal input loop")
+    _thread.start()
+    deadline = time.monotonic() + 120
+    while _thread.is_alive() and time.monotonic() < deadline:
+        app = getattr(_cli, "_app", None)
+        if app is not None and app.is_running and app.render_counter > 0:
+            if _cli._active_session_lease is None:
+                raise RuntimeError("HermesCLI has no active-session ownership")
+            return status()
+        time.sleep(0.02)
+    raise RuntimeError(_failure or "HermesCLI did not reach its terminal input loop")
+
+
+def status():
+    import cli
+    import sqlite3
+    app = getattr(_cli, "_app", None)
+    return {
+        "open": bool(_thread and _thread.is_alive() and app and app.is_running),
+        "session_id": _cli.session_id if _cli else None,
+        "session_store": bool(_cli and _cli._session_db is not None
+                              and _cli._session_db._conn is not None),
+        "history_size": len(_cli.conversation_history) if _cli else 0,
+        "model": _cli.model if _cli else None,
+        "provider": _cli.provider if _cli else None,
+        "source": cli.__file__,
+        "sqlite": sqlite3.__file__,
+        "python": sys.version,
+        "failure": _failure,
+        "threads": _threads(),
+    }
+
+
+def submit(line, timeout=900):
+    if not status()["open"] or _pipe is None:
+        raise RuntimeError(_failure or "HermesCLI input loop is closed")
+    if not isinstance(line, str) or "\n" in line or "\r" in line:
+        raise ValueError("HermesCLI command requires one input line")
+    receipt = {"line": line, "done": threading.Event(), "error": None,
+               "turn_attempted": False, "turn": None}
+    if line == "/new":
+        _clear_input()
+    if _cli._app.current_buffer.text:
+        raise RuntimeError("HermesCLI has unsubmitted terminal input")
+    with _condition:
+        if _pending:
+            raise RuntimeError("HermesCLI already has an admitted command")
+        _pending.append(receipt)
+    deadline = time.monotonic() + timeout
+    _pipe.send_text(line)
+    # Hermes distinguishes paste newlines from Enter within 50ms of text changes.
+    # Wait for the real input buffer to settle before sending the Enter key.
+    while (not _cli._app.current_buffer.text or
+           time.monotonic() - getattr(_cli, "_tui_last_text_change", 0) < 0.075):
+        if time.monotonic() >= deadline:
+            raise TimeoutError("HermesCLI terminal input did not settle")
+        time.sleep(0.01)
+    _pipe.send_text("\r")
+    if not receipt["done"].wait(max(0, deadline - time.monotonic())):
+        raise TimeoutError("HermesCLI command did not finish within its host deadline")
+    if receipt["error"]:
+        raise RuntimeError(receipt["error"])
+    if _cli._should_exit:
+        _thread.join(30)
+        if _thread.is_alive():
+            raise RuntimeError("HermesCLI did not finish shutdown")
+        if _failure:
+            raise RuntimeError(_failure)
+    result = status()
+    result["input_processed"] = True
+    result["turn_attempted"] = receipt["turn_attempted"]
+    if receipt["turn"] is not None:
+        result["turn"] = receipt["turn"]
+    return result
+
+
+def resize(rows, columns):
+    global _size
+    _size = (int(rows), int(columns))
+    os.environ["LINES"] = str(_size[0])
+    os.environ["COLUMNS"] = str(_size[1])
+    if _cli and getattr(_cli, "_app", None):
+        _cli._app.invalidate()
+
+
+def _clear_input():
+    app = _cli._app
+    if app.current_buffer.text:
+        cleared = threading.Event()
+        def clear_input():
+            app.current_buffer.reset()
+            cleared.set()
+        app.loop.call_soon_threadsafe(clear_input)
+        if not cleared.wait(5):
+            raise RuntimeError("HermesCLI did not clear its terminal input")
+
+
+def close():
+    if _thread and _thread.is_alive():
+        if status()["open"]:
+            _clear_input()
+            submit("/quit", timeout=900)
+        _thread.join(30)
+        if _thread.is_alive():
+            raise RuntimeError("HermesCLI did not finish shutdown")
+    if _failure:
+        raise RuntimeError(_failure)
+    return status()

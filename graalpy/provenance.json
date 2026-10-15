@@ -1,0 +1,61 @@
+{
+  "upstream": {
+    "repository": "https://github.com/NousResearch/hermes-agent",
+    "revision": "e06df9c2eae6901f4c88f464e0ae6e753c0428b8",
+    "committed_at": "2026-10-13T22:07:03Z",
+    "runtime_source_copied_at": "2026-10-14T14:40:01Z",
+    "cli_sha256": "04e9c76fc5596766d4fad1f28a1583ccbc0f9709371dd8a5f60ab91b34105ebb"
+  },
+  "trikeshed": {
+    "repository": "https://github.com/jnorthrup/TrikeShed",
+    "reference_commit": "7e5a54020e2813e8e6aba7af9f6b60f0965f981c",
+    "source_state": "Port files exported from the working tree; byte hashes below identify the exact exported bridges.",
+    "license": "AGPL-3.0-only",
+    "copyright": "Glamdring Incorporated"
+  },
+  "runtime": {
+    "distribution": "GraalPy Community",
+    "version": "25.3.4.1",
+    "python": "3.13.14",
+    "platform": "macos-aarch64",
+    "archive_url": "https://github.com/oracle/graalpython/releases/download/graal-25.3.4/graalpy3.13-community-25.3.4.1-macos-aarch64.tar.gz",
+    "archive_sha256": "e2cf7ae230478ad8d100ad868f75e3addb174d81e7f550322ea5e74cab066644"
+  },
+  "requirements_sha256": "0c90f0d055ffe628cab612429e2a62ab3f248f31b335a8c2a7991d17df5d265f",
+  "bridge_sha256": {
+    "bridges/trikeshed_cli_worker.py": "41e93d10c8ca6f1214bd17302460673f67ac8ba173b5ec0b57cd369639f08534",
+    "bridges/trikeshed_contextvars.py": "2d2954f9ef1ad3f8441e99d7fb2a0bc1f2785e4f284ccbb84b0ee41c8cb0904d",
+    "bridges/trikeshed_modelmux.py": "82c7bc0c636477a271cdb6cbf8dc72bb69cbf721e6a3f2b4123e64c9472e8189",
+    "bridges/trikeshed_posix.py": "34d33f3bbba8cb79d8bd0dfb45712658ec81afaf077c38dd39f2f5f4714d6657"
+  },
+  "execution": {
+    "contexts_per_process": 1,
+    "posix_backend": "native",
+    "source": "original cli.py through cli.main",
+    "standalone_host_call": false,
+    "optional_provider_bridge": "trikeshed_modelmux"
+  },
+  "standalone": {
+    "entry": "borg.trikeshed.hermes.HermesGraalPy",
+    "bootstrap": "graalpy/cli.py",
+    "jca_provider": "graalpy/jvm/src/main/java/borg/trikeshed/hermes/PythonBlake2Provider.java",
+    "dependencies": "graalpy/jvm/pom.xml",
+    "java_release": 21,
+    "build_verified": true,
+    "original_cli_help_verified": true,
+    "blake2b_verified_digest_bytes": [
+      1,
+      16,
+      32,
+      64
+    ],
+    "blake2b_copy_verified": true,
+    "native_launcher_direct_cli_supported": false,
+    "interactive_terminal_verified": true,
+    "interactive_terminal_note": "Actual typed /help, then a real NVIDIA Nemotron 550 agent read_file turn and final reply persisted in the native Hermes SQLite store.",
+    "signal_handlers": "python.AllowSignalHandlers=true; python.InstallSignalHandlers=true",
+    "shutdown": "Join the original CLI bound-method workers and close its actual session registry before Context.close.",
+    "proof": "verification/standalone-agent-turn.json",
+    "graceful_quit_verified": true
+  }
+}

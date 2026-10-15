@@ -1,3 +1,19 @@
+# Hermes · TrikeShed GraalPy
+
+The real Hermes agent CLI and TUI running in stock GraalPy, with the narrow TrikeShed bridges kept in [`graalpy/`](graalpy/). The agent loop, tool dispatch, provider SDK, SQLite session store, and upstream Python sources are retained.
+
+This repository starts at **NousResearch/hermes-agent `e06df9c2eae6901f4c88f464e0ae6e753c0428b8`**, committed October 13, 2026: the exact revision used for the October 14 port. The complete upstream Git ancestry is preserved. `upstream-port-2026-10-14` marks that baseline.
+
+[Port setup, runtime requirements, and limits](graalpy/README.md) · [Normal-terminal agent/tool verification](graalpy/verification/standalone-agent-turn.json) · [Hosted verification](graalpy/verification/hosted-agent-turn.json)
+
+The standalone CLI and hosted path use **one Python Context per OS worker**, GraalPy Community **25.3.4.1 / Python 3.13.14**, and genuine native packages. In a normal OS terminal, NVIDIA `nvidia/nemotron-3-ultra-550b-a55b` completed an agent turn with the real `read_file` tool and a final model reply. Typed `/help`, Enter, native SQLite persistence, and a graceful `/quit` exit were verified. Gateway and desktop operation through GraalPy have not been validated. The original CPython application remains the reference.
+
+Provider credentials, profiles, conversation databases, runtime binaries, and local logs are excluded. Configure credentials in your own Hermes home. The imported TrikeShed bridges retain their AGPLv3 license and notice under `graalpy/`; upstream Hermes retains its MIT license.
+
+GitHub permits one fork per owner in a repository network. The existing `jnorthrup/hermes-agent` fork is preserved; this separately named repository retains upstream history but is not marked as a GitHub network fork.
+
+---
+
 <p align="center">
   <img src="assets/banner.png" alt="Hermes Agent" width="100%">
 </p>
