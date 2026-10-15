@@ -183,7 +183,7 @@ def start(call, model=None, resume=None, rows=32, columns=100):
     _thread = threading.Thread(target=_serve, name="hermes-cli", daemon=False)
     call("sleeve_progress", "starting HermesCLI.run terminal input loop")
     _thread.start()
-    deadline = time.monotonic() + 120
+    deadline = time.monotonic() + 900
     while _thread.is_alive() and time.monotonic() < deadline:
         app = getattr(_cli, "_app", None)
         if app is not None and app.is_running and app.render_counter > 0:
@@ -191,7 +191,9 @@ def start(call, model=None, resume=None, rows=32, columns=100):
                 raise RuntimeError("HermesCLI has no active-session ownership")
             return status()
         time.sleep(0.02)
-    raise RuntimeError(_failure or "HermesCLI did not reach its terminal input loop")
+    failure = _failure or "HermesCLI did not reach its terminal input loop"
+    call("sleeve_cli_closed", _cli.session_id, failure)
+    raise RuntimeError(failure)
 
 
 def status():
@@ -280,6 +282,11 @@ def _clear_input():
 
 def close():
     if _thread and _thread.is_alive():
+        deadline = time.monotonic() + 900
+        while _thread.is_alive() and not status()["open"] and not _cli._should_exit:
+            if time.monotonic() >= deadline:
+                raise RuntimeError("HermesCLI startup did not settle before shutdown")
+            time.sleep(0.05)
         if status()["open"]:
             _clear_input()
             submit("/quit", timeout=900)

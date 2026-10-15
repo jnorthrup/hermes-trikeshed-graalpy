@@ -23,7 +23,7 @@
   },
   "requirements_sha256": "0c90f0d055ffe628cab612429e2a62ab3f248f31b335a8c2a7991d17df5d265f",
   "bridge_sha256": {
-    "bridges/trikeshed_cli_worker.py": "41e93d10c8ca6f1214bd17302460673f67ac8ba173b5ec0b57cd369639f08534",
+    "bridges/trikeshed_cli_worker.py": "902629b447b017a7ee14d3a6c338f93f6d7178856906747a57b544f9f5e0681d",
     "bridges/trikeshed_contextvars.py": "2d2954f9ef1ad3f8441e99d7fb2a0bc1f2785e4f284ccbb84b0ee41c8cb0904d",
     "bridges/trikeshed_modelmux.py": "82c7bc0c636477a271cdb6cbf8dc72bb69cbf721e6a3f2b4123e64c9472e8189",
     "bridges/trikeshed_posix.py": "34d33f3bbba8cb79d8bd0dfb45712658ec81afaf077c38dd39f2f5f4714d6657"
