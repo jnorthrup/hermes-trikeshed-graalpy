@@ -31,6 +31,7 @@ from agent.display import (
     _detect_tool_failure,
 )
 from agent.compression_marker import _COMPRESSION_MARKER_PREFIX
+from agent.host_tool_transport import host_tool_deadline
 from agent.interrupt_control import _REASON_USER_INTERRUPT, interrupt_skip_wording
 from agent.message_sanitization import coalesce_tool_call_id
 from agent.onboarding import observe_tool_result as observe_onboarding_result
@@ -625,6 +626,8 @@ def _run_tool_activity_heartbeat(
 
 def _run_with_activity_heartbeat(agent, function_name: str, fn):
     """Run ``fn()`` under the activity heartbeat; covers both executor paths."""
+    if host_tool_deadline(function_name) is not None:
+        return fn()
     stop = threading.Event()
     thread = threading.Thread(
         # Keep the gateway turn-inactivity watchdog from abandoning a turn whose tool call runs silently for
@@ -923,7 +926,7 @@ def _run_sequential_tool_execution_middleware(
         future = prepared.future
     else:
         authorization_gate = None
-    if function_name in _NEVER_PARALLEL_TOOLS:
+    if function_name in _NEVER_PARALLEL_TOOLS or host_tool_deadline(function_name) is not None:
         return _run_agent_tool_execution_middleware(agent, **kwargs)
 
     from tools.daemon_pool import DaemonThreadPoolExecutor
